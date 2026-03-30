@@ -184,7 +184,7 @@ function buildAsmOutput() {
     );
   });
 
-  elements.asmOutput.value = lines.join("\n");
+  return lines.join("\n");
 }
 
 function buildCOutput() {
@@ -207,7 +207,12 @@ function buildCOutput() {
   }
 
   lines.push("};");
-  elements.cOutput.value = lines.join("\n");
+  return lines.join("\n");
+}
+
+function refreshExportOutputs() {
+  elements.asmOutput.value = buildAsmOutput();
+  elements.cOutput.value = buildCOutput();
 }
 
 function renderGlyphGrid() {
@@ -258,8 +263,7 @@ function rerender() {
   renderGlyphEditor();
   renderPreview();
   renderGlyphGrid();
-  buildAsmOutput();
-  buildCOutput();
+  refreshExportOutputs();
 }
 
 function setPixelFromEvent(event) {
@@ -343,8 +347,8 @@ elements.charCodeInput.addEventListener("change", () => {
 });
 
 elements.previewTextInput.addEventListener("input", renderPreview);
-elements.asmLabelInput.addEventListener("input", buildAsmOutput);
-elements.baseFilenameInput.addEventListener("input", buildCOutput);
+elements.asmLabelInput.addEventListener("input", refreshExportOutputs);
+elements.baseFilenameInput.addEventListener("input", refreshExportOutputs);
 
 elements.toolButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -382,6 +386,7 @@ elements.downloadBinButton.addEventListener("click", () => {
 });
 
 elements.downloadAsmButton.addEventListener("click", () => {
+  refreshExportOutputs();
   downloadFile(
     `${sanitizeBaseFilename()}.s`,
     elements.asmOutput.value,
@@ -390,6 +395,7 @@ elements.downloadAsmButton.addEventListener("click", () => {
 });
 
 elements.downloadCButton.addEventListener("click", () => {
+  refreshExportOutputs();
   downloadFile(
     `${sanitizeBaseFilename()}.c`,
     elements.cOutput.value,
