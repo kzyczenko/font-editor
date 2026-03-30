@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Atari ST 8x8 Font Editor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Atari ST Font Tool</p>
+          <h1>Edytor fontu 8x8, 1bpp</h1>
+          <p class="hero-copy">
+            Font zapisany znak po znaku. Kazdy glif ma 8 bajtow, po jednym na
+            wiersz.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="newFontButton" class="secondary-button">Nowy font</button>
+          <button id="downloadBinButton" class="primary-button">
+            Eksport BIN
+          </button>
+          <button id="downloadAsmButton" class="secondary-button">
+            Eksport ASM
+          </button>
+          <label class="file-input">
+            <input id="importBinInput" type="file" accept=".bin,.dat" />
+            Import BIN
+          </label>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel editor-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Glif</p>
+              <h2 id="glyphTitle">Kod 32 / 0x20</h2>
+            </div>
+            <div class="glyph-meta">
+              <label>
+                Znak
+                <input id="charCodeInput" type="number" min="0" max="255" />
+              </label>
+              <button id="copyGlyphButton" class="ghost-button">Kopiuj</button>
+              <button id="pasteGlyphButton" class="ghost-button">Wklej</button>
+            </div>
+          </div>
+
+          <div class="editor-layout">
+            <canvas
+              id="glyphCanvas"
+              width="320"
+              height="320"
+              aria-label="Edytor glifu 8x8"
+            ></canvas>
+
+            <div class="tool-column">
+              <div class="tool-group">
+                <p class="panel-label">Narzędzia</p>
+                <div class="button-grid">
+                  <button data-tool="draw" class="tool-button active">Rysuj</button>
+                  <button data-tool="erase" class="tool-button">Kasuj</button>
+                  <button id="invertGlyphButton" class="tool-button">Invert</button>
+                  <button id="clearGlyphButton" class="tool-button">Clear</button>
+                </div>
+              </div>
+
+              <div class="tool-group">
+                <p class="panel-label">Przesuniecia</p>
+                <div class="button-grid">
+                  <button data-shift="up" class="tool-button">Gora</button>
+                  <button data-shift="down" class="tool-button">Dol</button>
+                  <button data-shift="left" class="tool-button">Lewo</button>
+                  <button data-shift="right" class="tool-button">Prawo</button>
+                </div>
+              </div>
+
+              <div class="tool-group">
+                <p class="panel-label">Wiersze glifu</p>
+                <pre id="glyphBytes" class="byte-output"></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel preview-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Preview</p>
+              <h2>Tekst testowy</h2>
+            </div>
+          </div>
+          <label class="stack-label">
+            Tekst
+            <textarea id="previewTextInput" rows="4">HELLO ATARI ST
+01234567
+PIXEL FONT DEMO</textarea>
+          </label>
+          <canvas
+            id="previewCanvas"
+            width="512"
+            height="192"
+            aria-label="Podglad tekstu"
+          ></canvas>
+        </section>
+
+        <section class="panel atlas-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Atlas</p>
+              <h2>256 znakow</h2>
+            </div>
+          </div>
+          <div id="glyphGrid" class="glyph-grid" aria-label="Lista glifow"></div>
+        </section>
+
+        <section class="panel export-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Eksport</p>
+              <h2>ASM i binarka</h2>
+            </div>
+          </div>
+          <p class="format-note">
+            Format: 256 glifow, 8x8, 1bpp, 8 bajtow na znak, bit 7 = lewy
+            piksel.
+          </p>
+          <label class="stack-label">
+            Nazwa etykiety ASM
+            <input id="asmLabelInput" type="text" value="font8x8_data" />
+          </label>
+          <label class="stack-label">
+            Podglad ASM
+            <textarea id="asmOutput" rows="12" readonly></textarea>
+          </label>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
