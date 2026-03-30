@@ -20,10 +20,13 @@
         <div class="hero-actions">
           <button id="newFontButton" class="secondary-button">Nowy font</button>
           <button id="downloadBinButton" class="primary-button">
-            Eksport BIN
+            Eksport FNT
           </button>
           <button id="downloadAsmButton" class="secondary-button">
             Eksport ASM
+          </button>
+          <button id="downloadCButton" class="secondary-button">
+            Eksport C
           </button>
           <label class="file-input">
             <input id="importBinInput" type="file" accept=".fnt,.bin,.dat" />
@@ -129,12 +132,20 @@ PIXEL FONT DEMO</textarea>
             piksel.
           </p>
           <label class="stack-label">
+            Nazwa pliku
+            <input id="baseFilenameInput" type="text" value="font8x8" />
+          </label>
+          <label class="stack-label">
             Nazwa etykiety ASM
             <input id="asmLabelInput" type="text" value="font8x8_data" />
           </label>
           <label class="stack-label">
             Podglad ASM
             <textarea id="asmOutput" rows="12" readonly></textarea>
+          </label>
+          <label class="stack-label">
+            Podglad C
+            <textarea id="cOutput" rows="12" readonly></textarea>
           </label>
         </section>
       </main>

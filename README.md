@@ -32,3 +32,5 @@ Jesli przegladarka blokuje import plikow przy otwarciu lokalnym, odpal prosty se
 - import pliku `.fnt`
 - eksport `.fnt`
 - eksport `ASM` jako `dc.b`
+- eksport `C` jako `const uint8_t[]`
+- pole do ustawienia bazowej nazwy plikow eksportu

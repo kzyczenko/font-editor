@@ -23,9 +23,12 @@ const elements = {
   previewCanvas: document.getElementById("previewCanvas"),
   downloadBinButton: document.getElementById("downloadBinButton"),
   downloadAsmButton: document.getElementById("downloadAsmButton"),
+  downloadCButton: document.getElementById("downloadCButton"),
   importBinInput: document.getElementById("importBinInput"),
+  baseFilenameInput: document.getElementById("baseFilenameInput"),
   asmLabelInput: document.getElementById("asmLabelInput"),
   asmOutput: document.getElementById("asmOutput"),
+  cOutput: document.getElementById("cOutput"),
   newFontButton: document.getElementById("newFontButton"),
   copyGlyphButton: document.getElementById("copyGlyphButton"),
   pasteGlyphButton: document.getElementById("pasteGlyphButton"),
@@ -77,6 +80,18 @@ function serializeFont() {
   });
 
   return output;
+}
+
+function sanitizeBaseFilename() {
+  const raw = elements.baseFilenameInput.value.trim();
+  const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return cleaned || "font8x8";
+}
+
+function sanitizeCIdentifier(value, fallback) {
+  const cleaned = value.trim().replace(/[^a-zA-Z0-9_]/g, "_");
+  const normalized = /^[a-zA-Z_]/.test(cleaned) ? cleaned : `_${cleaned}`;
+  return normalized === "_" ? fallback : normalized;
 }
 
 function deserializeFont(buffer) {
@@ -172,6 +187,29 @@ function buildAsmOutput() {
   elements.asmOutput.value = lines.join("\n");
 }
 
+function buildCOutput() {
+  const baseName = sanitizeBaseFilename();
+  const identifier = sanitizeCIdentifier(baseName, "font8x8");
+  const bytes = [...serializeFont()];
+  const lines = [
+    "#include <stdint.h>",
+    "",
+    `const uint8_t ${identifier}[${bytes.length}] = {`,
+  ];
+
+  for (let index = 0; index < bytes.length; index += 8) {
+    const chunk = bytes.slice(index, index + 8);
+    lines.push(
+      `    ${chunk
+        .map((byte) => `0x${byte.toString(16).toUpperCase().padStart(2, "0")}`)
+        .join(",")},`
+    );
+  }
+
+  lines.push("};");
+  elements.cOutput.value = lines.join("\n");
+}
+
 function renderGlyphGrid() {
   elements.glyphGrid.innerHTML = "";
 
@@ -221,6 +259,7 @@ function rerender() {
   renderPreview();
   renderGlyphGrid();
   buildAsmOutput();
+  buildCOutput();
 }
 
 function setPixelFromEvent(event) {
@@ -305,6 +344,7 @@ elements.charCodeInput.addEventListener("change", () => {
 
 elements.previewTextInput.addEventListener("input", renderPreview);
 elements.asmLabelInput.addEventListener("input", buildAsmOutput);
+elements.baseFilenameInput.addEventListener("input", buildCOutput);
 
 elements.toolButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -338,11 +378,23 @@ elements.newFontButton.addEventListener("click", () => {
 });
 
 elements.downloadBinButton.addEventListener("click", () => {
-  downloadFile("font8x8.fnt", serializeFont(), "application/octet-stream");
+  downloadFile(`${sanitizeBaseFilename()}.fnt`, serializeFont(), "application/octet-stream");
 });
 
 elements.downloadAsmButton.addEventListener("click", () => {
-  downloadFile("font8x8.s", elements.asmOutput.value, "text/plain;charset=utf-8");
+  downloadFile(
+    `${sanitizeBaseFilename()}.s`,
+    elements.asmOutput.value,
+    "text/plain;charset=utf-8"
+  );
+});
+
+elements.downloadCButton.addEventListener("click", () => {
+  downloadFile(
+    `${sanitizeBaseFilename()}.c`,
+    elements.cOutput.value,
+    "text/plain;charset=utf-8"
+  );
 });
 
 elements.importBinInput.addEventListener("change", async (event) => {
