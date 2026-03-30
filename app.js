@@ -338,7 +338,7 @@ elements.newFontButton.addEventListener("click", () => {
 });
 
 elements.downloadBinButton.addEventListener("click", () => {
-  downloadFile("font8x8.bin", serializeFont(), "application/octet-stream");
+  downloadFile("font8x8.fnt", serializeFont(), "application/octet-stream");
 });
 
 elements.downloadAsmButton.addEventListener("click", () => {

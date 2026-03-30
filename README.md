@@ -29,5 +29,6 @@ Jesli przegladarka blokuje import plikow przy otwarciu lokalnym, odpal prosty se
 - przesuwanie glifu
 - invert i clear
 - import binarki `2048` bajtow
-- eksport `BIN`
+- import pliku `.fnt`
+- eksport `.fnt`
 - eksport `ASM` jako `dc.b`
