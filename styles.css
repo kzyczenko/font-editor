@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -46,7 +47,8 @@ button:hover,
 
 textarea,
 input[type="number"],
-input[type="text"] {
+input[type="text"],
+select {
   width: 100%;
   border: 2px solid var(--line);
   border-radius: 12px;
@@ -243,6 +245,13 @@ textarea {
   margin-bottom: 16px;
 }
 
+.compact-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
 .format-note {
   margin: 0 0 16px;
   line-height: 1.5;
@@ -276,6 +285,17 @@ textarea {
   height: 32px;
   margin-bottom: 6px;
   image-rendering: pixelated;
+}
+
+.glyph-char {
+  min-height: 1.2em;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.glyph-code {
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
 .glyph-cell button {

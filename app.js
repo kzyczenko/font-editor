@@ -11,6 +11,7 @@ const state = {
   activeTool: "draw",
   isPointerDown: false,
   clipboard: null,
+  codePage: "iso-8859-2",
 };
 
 const elements = {
@@ -19,6 +20,7 @@ const elements = {
   charCodeInput: document.getElementById("charCodeInput"),
   glyphBytes: document.getElementById("glyphBytes"),
   glyphGrid: document.getElementById("glyphGrid"),
+  codePageSelect: document.getElementById("codePageSelect"),
   previewTextInput: document.getElementById("previewTextInput"),
   previewCanvas: document.getElementById("previewCanvas"),
   downloadBinButton: document.getElementById("downloadBinButton"),
@@ -41,6 +43,7 @@ const elements = {
 const glyphContext = elements.glyphCanvas.getContext("2d");
 const previewContext = elements.previewCanvas.getContext("2d");
 const cellSize = elements.glyphCanvas.width / GLYPH_SIZE;
+const codePageCache = new Map();
 
 function cloneGlyph(glyph) {
   return glyph.map((row) => [...row]);
@@ -50,9 +53,70 @@ function getSelectedGlyph() {
   return state.glyphs[state.selectedChar];
 }
 
+function buildAsciiMapping() {
+  const bytesToChars = Array.from({ length: GLYPH_COUNT }, (_, index) =>
+    index >= 32 && index <= 126 ? String.fromCharCode(index) : ""
+  );
+  const charsToBytes = new Map();
+
+  bytesToChars.forEach((character, index) => {
+    if (character) {
+      charsToBytes.set(character, index);
+    }
+  });
+
+  return { bytesToChars, charsToBytes };
+}
+
+function buildDecoderMapping(encoding) {
+  let decoder;
+
+  try {
+    decoder = new TextDecoder(encoding);
+  } catch (_error) {
+    return buildAsciiMapping();
+  }
+
+  const bytesToChars = [];
+  const charsToBytes = new Map();
+
+  for (let index = 0; index < GLYPH_COUNT; index += 1) {
+    const character = decoder.decode(Uint8Array.of(index));
+    bytesToChars.push(character);
+
+    if (character && !charsToBytes.has(character)) {
+      charsToBytes.set(character, index);
+    }
+  }
+
+  return { bytesToChars, charsToBytes };
+}
+
+function getCodePageMapping() {
+  if (!codePageCache.has(state.codePage)) {
+    const mapping =
+      state.codePage === "ascii"
+        ? buildAsciiMapping()
+        : buildDecoderMapping(state.codePage);
+    codePageCache.set(state.codePage, mapping);
+  }
+
+  return codePageCache.get(state.codePage);
+}
+
+function formatGlyphCharacter(charCode) {
+  const { bytesToChars } = getCodePageMapping();
+  const character = bytesToChars[charCode] || "";
+
+  if (!character || /[\u0000-\u001f\u007f-\u009f]/u.test(character)) {
+    return ".";
+  }
+
+  return character === " " ? "\u2423" : character;
+}
+
 function formatCharLabel(charCode) {
-  const printable =
-    charCode >= 32 && charCode <= 126 ? String.fromCharCode(charCode) : ".";
+  const printable = formatGlyphCharacter(charCode);
   return `Kod ${charCode} / 0x${charCode
     .toString(16)
     .toUpperCase()
@@ -140,6 +204,7 @@ function renderGlyphEditor() {
 function renderPreview() {
   const text = elements.previewTextInput.value.replace(/\r/g, "");
   const lines = text.split("\n");
+  const { charsToBytes } = getCodePageMapping();
   const padding = 12;
   const width = Math.max(...lines.map((line) => line.length), 1) * GLYPH_SIZE * PREVIEW_SCALE;
   const height = Math.max(lines.length, 1) * GLYPH_SIZE * PREVIEW_SCALE;
@@ -152,7 +217,12 @@ function renderPreview() {
 
   lines.forEach((line, lineIndex) => {
     [...line].forEach((character, charIndex) => {
-      const glyph = state.glyphs[character.charCodeAt(0) & 0xff];
+      const glyphIndex =
+        charsToBytes.get(character) ??
+        (character.length === 1 && character.charCodeAt(0) <= 0xff
+          ? character.charCodeAt(0) & 0xff
+          : 63);
+      const glyph = state.glyphs[glyphIndex];
       for (let y = 0; y < GLYPH_SIZE; y += 1) {
         for (let x = 0; x < GLYPH_SIZE; x += 1) {
           if (!glyph[y][x]) {
@@ -250,9 +320,14 @@ function renderGlyphGrid() {
     ctx.putImageData(imageData, 0, 0);
 
     const label = document.createElement("div");
-    label.textContent = glyphIndex.toString().padStart(3, "0");
+    label.className = "glyph-char";
+    label.textContent = formatGlyphCharacter(glyphIndex);
 
-    button.append(canvas, label);
+    const code = document.createElement("div");
+    code.className = "glyph-code";
+    code.textContent = glyphIndex.toString().padStart(3, "0");
+
+    button.append(canvas, label, code);
     wrapper.appendChild(button);
     elements.glyphGrid.appendChild(wrapper);
   });
@@ -349,6 +424,10 @@ elements.charCodeInput.addEventListener("change", () => {
 elements.previewTextInput.addEventListener("input", renderPreview);
 elements.asmLabelInput.addEventListener("input", refreshExportOutputs);
 elements.baseFilenameInput.addEventListener("input", refreshExportOutputs);
+elements.codePageSelect.addEventListener("change", () => {
+  state.codePage = elements.codePageSelect.value;
+  rerender();
+});
 
 elements.toolButtons.forEach((button) => {
   button.addEventListener("click", () => {

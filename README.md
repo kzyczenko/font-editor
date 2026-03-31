@@ -25,6 +25,7 @@ Jesli przegladarka blokuje import plikow przy otwarciu lokalnym, odpal prosty se
 - edycja pojedynczego glifu `8x8`
 - atlas `256` znakow
 - preview wpisanego tekstu
+- przelaczalne strony kodowe w atlasie i preview
 - kopiowanie i wklejanie glifu
 - przesuwanie glifu
 - invert i clear
