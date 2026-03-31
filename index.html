@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Atari ST 8x8 Font Editor</title>
+    <title>Atari ST Font Editor</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -11,10 +11,10 @@
       <header class="hero">
         <div>
           <p class="eyebrow">Atari ST Font Tool</p>
-          <h1>Edytor fontu 8x8, 1bpp</h1>
+          <h1>Edytor fontu 1bpp</h1>
           <p class="hero-copy">
-            Font zapisany znak po znaku. Kazdy glif ma 8 bajtow, po jednym na
-            wiersz.
+            Font zapisany znak po znaku. Presety `6x6`, `8x8` i `16x16`,
+            gotowe pod eksport surowego `.fnt`, ASM i C.
           </p>
         </div>
         <div class="hero-actions">
@@ -44,6 +44,14 @@
             </div>
             <div class="glyph-meta">
               <label>
+                Format
+                <select id="fontPresetSelect">
+                  <option value="6x6">6x6</option>
+                  <option value="8x8" selected>8x8</option>
+                  <option value="16x16">16x16</option>
+                </select>
+              </label>
+              <label>
                 Znak
                 <input id="charCodeInput" type="number" min="0" max="255" />
               </label>
@@ -57,7 +65,7 @@
               id="glyphCanvas"
               width="320"
               height="320"
-              aria-label="Edytor glifu 8x8"
+              aria-label="Edytor glifu"
             ></canvas>
 
             <div class="tool-column">

@@ -214,6 +214,10 @@ textarea {
   flex-wrap: wrap;
 }
 
+.glyph-meta label {
+  min-width: 110px;
+}
+
 .tool-column {
   display: flex;
   flex-direction: column;

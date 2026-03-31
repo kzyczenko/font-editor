@@ -1,12 +1,16 @@
-const GLYPH_SIZE = 8;
 const GLYPH_COUNT = 256;
-const BYTES_PER_GLYPH = 8;
-const PREVIEW_SCALE = 4;
-const EMPTY_GLYPH = () =>
-  Array.from({ length: GLYPH_SIZE }, () => Array(GLYPH_SIZE).fill(0));
+const CANVAS_SIZE = 320;
+const FONT_PRESETS = {
+  "6x6": { width: 6, height: 6 },
+  "8x8": { width: 8, height: 8 },
+  "16x16": { width: 16, height: 16 },
+};
 
 const state = {
-  glyphs: Array.from({ length: GLYPH_COUNT }, EMPTY_GLYPH),
+  fontPreset: "8x8",
+  fontWidth: 8,
+  fontHeight: 8,
+  glyphs: [],
   selectedChar: 32,
   activeTool: "draw",
   isPointerDown: false,
@@ -20,6 +24,7 @@ const state = {
 const elements = {
   glyphCanvas: document.getElementById("glyphCanvas"),
   glyphTitle: document.getElementById("glyphTitle"),
+  fontPresetSelect: document.getElementById("fontPresetSelect"),
   charCodeInput: document.getElementById("charCodeInput"),
   glyphBytes: document.getElementById("glyphBytes"),
   glyphGrid: document.getElementById("glyphGrid"),
@@ -45,14 +50,36 @@ const elements = {
   mirrorVerticalButton: document.getElementById("mirrorVerticalButton"),
   rotateRightButton: document.getElementById("rotateRightButton"),
   rotateLeftButton: document.getElementById("rotateLeftButton"),
+  formatNote: document.querySelector(".format-note"),
   toolButtons: [...document.querySelectorAll("[data-tool]")],
   shiftButtons: [...document.querySelectorAll("[data-shift]")],
 };
 
 const glyphContext = elements.glyphCanvas.getContext("2d");
 const previewContext = elements.previewCanvas.getContext("2d");
-const cellSize = elements.glyphCanvas.width / GLYPH_SIZE;
 const codePageCache = new Map();
+
+function getBytesPerRow() {
+  return Math.ceil(state.fontWidth / 8);
+}
+
+function getBytesPerGlyph() {
+  return getBytesPerRow() * state.fontHeight;
+}
+
+function getPreviewScale() {
+  return state.fontWidth >= 16 || state.fontHeight >= 16 ? 2 : 4;
+}
+
+function createEmptyGlyph() {
+  return Array.from({ length: state.fontHeight }, () =>
+    Array(state.fontWidth).fill(0)
+  );
+}
+
+function createEmptyFont() {
+  return Array.from({ length: GLYPH_COUNT }, () => createEmptyGlyph());
+}
 
 function cloneGlyph(glyph) {
   return glyph.map((row) => [...row]);
@@ -71,8 +98,12 @@ function resetHistory() {
   state.redoStack = [];
 }
 
+function glyphsEqual(first, second) {
+  return JSON.stringify(first) === JSON.stringify(second);
+}
+
 function pushHistoryEntry(glyphIndex, before, after) {
-  if (JSON.stringify(before) === JSON.stringify(after)) {
+  if (glyphsEqual(before, after)) {
     return;
   }
 
@@ -173,23 +204,38 @@ function formatCharLabel(charCode) {
 }
 
 function glyphToBytes(glyph) {
-  return glyph.map((row) =>
-    row.reduce((byte, pixel, index) => byte | (pixel << (7 - index)), 0)
-  );
+  const bytesPerRow = getBytesPerRow();
+
+  return glyph.flatMap((row) => {
+    const rowBytes = Array(bytesPerRow).fill(0);
+
+    row.forEach((pixel, index) => {
+      const byteIndex = Math.floor(index / 8);
+      const bitIndex = 7 - (index % 8);
+      rowBytes[byteIndex] |= pixel << bitIndex;
+    });
+
+    return rowBytes;
+  });
 }
 
 function bytesToGlyph(bytes) {
-  return bytes.map((byte) =>
-    Array.from({ length: GLYPH_SIZE }, (_, x) => (byte >> (7 - x)) & 1)
+  const bytesPerRow = getBytesPerRow();
+
+  return Array.from({ length: state.fontHeight }, (_, y) =>
+    Array.from({ length: state.fontWidth }, (_, x) => {
+      const byteIndex = y * bytesPerRow + Math.floor(x / 8);
+      const bitIndex = 7 - (x % 8);
+      return (bytes[byteIndex] >> bitIndex) & 1;
+    })
   );
 }
 
 function serializeFont() {
-  const output = new Uint8Array(GLYPH_COUNT * BYTES_PER_GLYPH);
+  const output = new Uint8Array(GLYPH_COUNT * getBytesPerGlyph());
 
   state.glyphs.forEach((glyph, glyphIndex) => {
-    const bytes = glyphToBytes(glyph);
-    output.set(bytes, glyphIndex * BYTES_PER_GLYPH);
+    output.set(glyphToBytes(glyph), glyphIndex * getBytesPerGlyph());
   });
 
   return output;
@@ -198,7 +244,7 @@ function serializeFont() {
 function sanitizeBaseFilename() {
   const raw = elements.baseFilenameInput.value.trim();
   const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return cleaned || "font8x8";
+  return cleaned || `font${state.fontWidth}x${state.fontHeight}`;
 }
 
 function sanitizeCIdentifier(value, fallback) {
@@ -209,24 +255,32 @@ function sanitizeCIdentifier(value, fallback) {
 
 function deserializeFont(buffer) {
   const data = new Uint8Array(buffer);
+  const expectedSize = GLYPH_COUNT * getBytesPerGlyph();
 
-  if (data.length !== GLYPH_COUNT * BYTES_PER_GLYPH) {
-    throw new Error("Plik musi miec dokladnie 2048 bajtow dla 256 znakow 8x8.");
+  if (data.length !== expectedSize) {
+    throw new Error(
+      `Plik musi miec dokladnie ${expectedSize} bajtow dla ${GLYPH_COUNT} znakow ${state.fontWidth}x${state.fontHeight}.`
+    );
   }
 
   for (let glyphIndex = 0; glyphIndex < GLYPH_COUNT; glyphIndex += 1) {
-    const start = glyphIndex * BYTES_PER_GLYPH;
-    state.glyphs[glyphIndex] = bytesToGlyph([...data.slice(start, start + BYTES_PER_GLYPH)]);
+    const start = glyphIndex * getBytesPerGlyph();
+    const glyphBytes = [...data.slice(start, start + getBytesPerGlyph())];
+    state.glyphs[glyphIndex] = bytesToGlyph(glyphBytes);
   }
+}
+
+function updateFormatNote() {
+  elements.formatNote.textContent = `Format: ${GLYPH_COUNT} glifow, ${state.fontWidth}x${state.fontHeight}, 1bpp, ${getBytesPerGlyph()} bajtow na znak, ${getBytesPerRow()} bajt(y) na wiersz, bit 7 = lewy piksel.`;
 }
 
 function updateGlyphInfo() {
   const glyph = getSelectedGlyph();
   const bytes = glyphToBytes(glyph);
-  elements.glyphTitle.textContent = formatCharLabel(state.selectedChar);
+  elements.glyphTitle.textContent = `${formatCharLabel(state.selectedChar)} / ${state.fontWidth}x${state.fontHeight}`;
   elements.charCodeInput.value = String(state.selectedChar);
   elements.glyphBytes.textContent = bytes
-    .map((byte, index) => `row ${index}: %${byte.toString(2).padStart(8, "0")}  $${byte
+    .map((byte, index) => `byte ${index}: %${byte.toString(2).padStart(8, "0")}  $${byte
       .toString(16)
       .toUpperCase()
       .padStart(2, "0")}`)
@@ -235,17 +289,20 @@ function updateGlyphInfo() {
 
 function renderGlyphEditor() {
   const glyph = getSelectedGlyph();
+  const cellWidth = elements.glyphCanvas.width / state.fontWidth;
+  const cellHeight = elements.glyphCanvas.height / state.fontHeight;
+
   glyphContext.clearRect(0, 0, elements.glyphCanvas.width, elements.glyphCanvas.height);
   glyphContext.fillStyle = "#fffdf7";
   glyphContext.fillRect(0, 0, elements.glyphCanvas.width, elements.glyphCanvas.height);
 
-  for (let y = 0; y < GLYPH_SIZE; y += 1) {
-    for (let x = 0; x < GLYPH_SIZE; x += 1) {
+  for (let y = 0; y < state.fontHeight; y += 1) {
+    for (let x = 0; x < state.fontWidth; x += 1) {
       glyphContext.fillStyle = glyph[y][x] ? "#1d1b16" : "#fffdf7";
-      glyphContext.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      glyphContext.fillRect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
       glyphContext.strokeStyle = "#d1c5aa";
       glyphContext.lineWidth = 2;
-      glyphContext.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      glyphContext.strokeRect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
     }
   }
 }
@@ -254,9 +311,10 @@ function renderPreview() {
   const text = elements.previewTextInput.value.replace(/\r/g, "");
   const lines = text.split("\n");
   const { charsToBytes } = getCodePageMapping();
+  const scale = getPreviewScale();
   const padding = 12;
-  const width = Math.max(...lines.map((line) => line.length), 1) * GLYPH_SIZE * PREVIEW_SCALE;
-  const height = Math.max(lines.length, 1) * GLYPH_SIZE * PREVIEW_SCALE;
+  const width = Math.max(...lines.map((line) => line.length), 1) * state.fontWidth * scale;
+  const height = Math.max(lines.length, 1) * state.fontHeight * scale;
 
   elements.previewCanvas.width = width + padding * 2;
   elements.previewCanvas.height = height + padding * 2;
@@ -272,17 +330,19 @@ function renderPreview() {
           ? character.charCodeAt(0) & 0xff
           : 63);
       const glyph = state.glyphs[glyphIndex];
-      for (let y = 0; y < GLYPH_SIZE; y += 1) {
-        for (let x = 0; x < GLYPH_SIZE; x += 1) {
+
+      for (let y = 0; y < state.fontHeight; y += 1) {
+        for (let x = 0; x < state.fontWidth; x += 1) {
           if (!glyph[y][x]) {
             continue;
           }
+
           previewContext.fillStyle = "#f7f1e3";
           previewContext.fillRect(
-            padding + charIndex * GLYPH_SIZE * PREVIEW_SCALE + x * PREVIEW_SCALE,
-            padding + lineIndex * GLYPH_SIZE * PREVIEW_SCALE + y * PREVIEW_SCALE,
-            PREVIEW_SCALE,
-            PREVIEW_SCALE
+            padding + charIndex * state.fontWidth * scale + x * scale,
+            padding + lineIndex * state.fontHeight * scale + y * scale,
+            scale,
+            scale
           );
         }
       }
@@ -291,7 +351,7 @@ function renderPreview() {
 }
 
 function buildAsmOutput() {
-  const label = elements.asmLabelInput.value.trim() || "font8x8_data";
+  const label = elements.asmLabelInput.value.trim() || `font${state.fontWidth}x${state.fontHeight}_data`;
   const lines = [`${label}:`];
 
   state.glyphs.forEach((glyph, glyphIndex) => {
@@ -308,7 +368,7 @@ function buildAsmOutput() {
 
 function buildCOutput() {
   const baseName = sanitizeBaseFilename();
-  const identifier = sanitizeCIdentifier(baseName, "font8x8");
+  const identifier = sanitizeCIdentifier(baseName, `font${state.fontWidth}x${state.fontHeight}`);
   const bytes = [...serializeFont()];
   const lines = [
     "#include <stdint.h>",
@@ -316,12 +376,12 @@ function buildCOutput() {
     `const uint8_t ${identifier}[${bytes.length}] = {`,
   ];
 
-  for (let index = 0; index < bytes.length; index += 8) {
-    const chunk = bytes.slice(index, index + 8);
+  for (let index = 0; index < bytes.length; index += getBytesPerGlyph()) {
+    const chunk = bytes.slice(index, index + getBytesPerGlyph());
     lines.push(
       `    ${chunk
         .map((byte) => `0x${byte.toString(16).toUpperCase().padStart(2, "0")}`)
-        .join(",")},`
+        .join(", ")},`
     );
   }
 
@@ -350,14 +410,14 @@ function renderGlyphGrid() {
     });
 
     const canvas = document.createElement("canvas");
-    canvas.width = GLYPH_SIZE;
-    canvas.height = GLYPH_SIZE;
+    canvas.width = state.fontWidth;
+    canvas.height = state.fontHeight;
     const ctx = canvas.getContext("2d");
-    const imageData = ctx.createImageData(GLYPH_SIZE, GLYPH_SIZE);
+    const imageData = ctx.createImageData(state.fontWidth, state.fontHeight);
 
     glyph.forEach((row, y) => {
       row.forEach((pixel, x) => {
-        const offset = (y * GLYPH_SIZE + x) * 4;
+        const offset = (y * state.fontWidth + x) * 4;
         const value = pixel ? 29 : 255;
         imageData.data[offset] = value;
         imageData.data[offset + 1] = pixel ? 27 : 253;
@@ -383,6 +443,7 @@ function renderGlyphGrid() {
 }
 
 function rerender() {
+  updateFormatNote();
   updateGlyphInfo();
   renderGlyphEditor();
   renderPreview();
@@ -392,10 +453,10 @@ function rerender() {
 
 function setPixelFromEvent(event) {
   const rect = elements.glyphCanvas.getBoundingClientRect();
-  const x = Math.floor(((event.clientX - rect.left) / rect.width) * GLYPH_SIZE);
-  const y = Math.floor(((event.clientY - rect.top) / rect.height) * GLYPH_SIZE);
+  const x = Math.floor(((event.clientX - rect.left) / rect.width) * state.fontWidth);
+  const y = Math.floor(((event.clientY - rect.top) / rect.height) * state.fontHeight);
 
-  if (x < 0 || x >= GLYPH_SIZE || y < 0 || y >= GLYPH_SIZE) {
+  if (x < 0 || x >= state.fontWidth || y < 0 || y >= state.fontHeight) {
     return;
   }
 
@@ -416,21 +477,21 @@ function setPixelFromEvent(event) {
 
 function shiftGlyph(direction) {
   const glyph = getSelectedGlyph();
-  const next = EMPTY_GLYPH();
+  const next = createEmptyGlyph();
 
-  for (let y = 0; y < GLYPH_SIZE; y += 1) {
-    for (let x = 0; x < GLYPH_SIZE; x += 1) {
+  for (let y = 0; y < state.fontHeight; y += 1) {
+    for (let x = 0; x < state.fontWidth; x += 1) {
       const sourceX =
         direction === "left"
-          ? (x + 1) % GLYPH_SIZE
+          ? (x + 1) % state.fontWidth
           : direction === "right"
-            ? (x - 1 + GLYPH_SIZE) % GLYPH_SIZE
+            ? (x - 1 + state.fontWidth) % state.fontWidth
             : x;
       const sourceY =
         direction === "up"
-          ? (y + 1) % GLYPH_SIZE
+          ? (y + 1) % state.fontHeight
           : direction === "down"
-            ? (y - 1 + GLYPH_SIZE) % GLYPH_SIZE
+            ? (y - 1 + state.fontHeight) % state.fontHeight
             : y;
 
       next[y][x] = glyph[sourceY][sourceX];
@@ -447,7 +508,7 @@ function invertGlyph() {
 }
 
 function clearGlyph() {
-  commitSelectedGlyphChange(EMPTY_GLYPH());
+  commitSelectedGlyphChange(createEmptyGlyph());
 }
 
 function mirrorGlyphHorizontal(glyph) {
@@ -459,14 +520,14 @@ function mirrorGlyphVertical(glyph) {
 }
 
 function rotateGlyphRight(glyph) {
-  return Array.from({ length: GLYPH_SIZE }, (_, y) =>
-    Array.from({ length: GLYPH_SIZE }, (_, x) => glyph[GLYPH_SIZE - 1 - x][y])
+  return Array.from({ length: state.fontHeight }, (_, y) =>
+    Array.from({ length: state.fontWidth }, (_, x) => glyph[state.fontHeight - 1 - x][y])
   );
 }
 
 function rotateGlyphLeft(glyph) {
-  return Array.from({ length: GLYPH_SIZE }, (_, y) =>
-    Array.from({ length: GLYPH_SIZE }, (_, x) => glyph[x][GLYPH_SIZE - 1 - y])
+  return Array.from({ length: state.fontHeight }, (_, y) =>
+    Array.from({ length: state.fontWidth }, (_, x) => glyph[x][state.fontWidth - 1 - y])
   );
 }
 
@@ -599,6 +660,47 @@ function downloadFile(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
+function applyFontPreset(presetKey, options = {}) {
+  const preset = FONT_PRESETS[presetKey];
+
+  if (!preset) {
+    return;
+  }
+
+  state.fontPreset = presetKey;
+  state.fontWidth = preset.width;
+  state.fontHeight = preset.height;
+  elements.fontPresetSelect.value = presetKey;
+
+  if (options.preserveGlyphs) {
+    return;
+  }
+
+  state.glyphs = createEmptyFont();
+  state.selectedChar = 32;
+  state.clipboard = null;
+  state.strokeSnapshot = null;
+  state.isPointerDown = false;
+  resetHistory();
+}
+
+function maybeSwitchFontPreset(presetKey) {
+  if (presetKey === state.fontPreset) {
+    return;
+  }
+
+  const confirmMessage =
+    "Zmiana formatu fontu wyczysci aktualny font i historie undo/redo. Kontynuowac?";
+
+  if (!window.confirm(confirmMessage)) {
+    elements.fontPresetSelect.value = state.fontPreset;
+    return;
+  }
+
+  applyFontPreset(presetKey);
+  rerender();
+}
+
 elements.glyphCanvas.addEventListener("pointerdown", (event) => {
   state.isPointerDown = true;
   state.strokeSnapshot = cloneGlyph(getSelectedGlyph());
@@ -617,10 +719,15 @@ window.addEventListener("pointerup", () => {
     state.strokeSnapshot = null;
     rerender();
   }
+
   state.isPointerDown = false;
 });
 
 window.addEventListener("keydown", handleKeyboardShortcut);
+
+elements.fontPresetSelect.addEventListener("change", () => {
+  maybeSwitchFontPreset(elements.fontPresetSelect.value);
+});
 
 elements.charCodeInput.addEventListener("change", () => {
   const value = Number(elements.charCodeInput.value);
@@ -676,8 +783,7 @@ elements.rotateLeftButton.addEventListener("click", () => {
 });
 
 elements.newFontButton.addEventListener("click", () => {
-  state.glyphs = Array.from({ length: GLYPH_COUNT }, EMPTY_GLYPH);
-  resetHistory();
+  applyFontPreset(state.fontPreset);
   rerender();
 });
 
@@ -722,4 +828,7 @@ elements.importBinInput.addEventListener("change", async (event) => {
   }
 });
 
+elements.glyphCanvas.width = CANVAS_SIZE;
+elements.glyphCanvas.height = CANVAS_SIZE;
+applyFontPreset(state.fontPreset);
 rerender();

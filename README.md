@@ -1,18 +1,24 @@
-# Atari ST 8x8 Font Editor
+# Atari ST Font Editor
 
-Prosty webowy edytor fontow `8x8`, `1bpp`, przygotowany pod fonty do dem i gier na Atari ST.
+Prosty webowy edytor fontow `1bpp`, przygotowany pod fonty do dem i gier na Atari ST.
 
 ## Format binarny
 
 - `256` znakow
-- `8x8` pikseli na glif
+- preset `6x6`, `8x8` albo `16x16`
 - `1bpp`
 - glify zapisane znak po znaku
-- kazdy glif ma `8` bajtow
-- kazdy bajt opisuje jeden wiersz
+- liczba bajtow na wiersz = `ceil(width / 8)`
+- liczba bajtow na glif = `bytesPerRow * height`
 - `bit 7` to lewy piksel, `bit 0` to prawy piksel
 
-Rozmiar pelnego pliku to `2048` bajtow.
+Przyklady:
+
+- `6x6` = `1536` bajtow
+- `8x8` = `2048` bajtow
+- `16x16` = `8192` bajtow
+
+Surowy plik `.fnt` nie ma naglowka, wiec przy imporcie edytor zaklada aktualnie wybrany preset rozmiaru.
 
 ## Uruchomienie
 
@@ -22,14 +28,15 @@ Jesli przegladarka blokuje import plikow przy otwarciu lokalnym, odpal prosty se
 
 ## Funkcje MVP
 
-- edycja pojedynczego glifu `8x8`
+- edycja pojedynczego glifu `6x6`, `8x8` lub `16x16`
 - atlas `256` znakow
 - preview wpisanego tekstu
 - przelaczalne strony kodowe w atlasie i preview
 - kopiowanie i wklejanie glifu
-- przesuwanie glifu
-- invert i clear
-- import binarki `2048` bajtow
+- przesuwanie glifu z wrap-around
+- undo/redo
+- invert, clear, mirror, rotate
+- import surowej binarki zgodnej z wybranym presetem
 - import pliku `.fnt`
 - eksport `.fnt`
 - eksport `ASM` jako `dc.b`
