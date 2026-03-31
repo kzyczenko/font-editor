@@ -10,8 +10,11 @@ const state = {
   selectedChar: 32,
   activeTool: "draw",
   isPointerDown: false,
+  strokeSnapshot: null,
   clipboard: null,
   codePage: "iso-8859-2",
+  undoStack: [],
+  redoStack: [],
 };
 
 const elements = {
@@ -34,8 +37,14 @@ const elements = {
   newFontButton: document.getElementById("newFontButton"),
   copyGlyphButton: document.getElementById("copyGlyphButton"),
   pasteGlyphButton: document.getElementById("pasteGlyphButton"),
+  undoButton: document.getElementById("undoButton"),
+  redoButton: document.getElementById("redoButton"),
   invertGlyphButton: document.getElementById("invertGlyphButton"),
   clearGlyphButton: document.getElementById("clearGlyphButton"),
+  mirrorHorizontalButton: document.getElementById("mirrorHorizontalButton"),
+  mirrorVerticalButton: document.getElementById("mirrorVerticalButton"),
+  rotateRightButton: document.getElementById("rotateRightButton"),
+  rotateLeftButton: document.getElementById("rotateLeftButton"),
   toolButtons: [...document.querySelectorAll("[data-tool]")],
   shiftButtons: [...document.querySelectorAll("[data-shift]")],
 };
@@ -51,6 +60,46 @@ function cloneGlyph(glyph) {
 
 function getSelectedGlyph() {
   return state.glyphs[state.selectedChar];
+}
+
+function setSelectedGlyph(glyph) {
+  state.glyphs[state.selectedChar] = cloneGlyph(glyph);
+}
+
+function resetHistory() {
+  state.undoStack = [];
+  state.redoStack = [];
+}
+
+function pushHistoryEntry(glyphIndex, before, after) {
+  if (JSON.stringify(before) === JSON.stringify(after)) {
+    return;
+  }
+
+  state.undoStack.push({
+    glyphIndex,
+    before: cloneGlyph(before),
+    after: cloneGlyph(after),
+  });
+  state.redoStack = [];
+}
+
+function applyGlyphHistoryState(glyphIndex, glyph) {
+  state.glyphs[glyphIndex] = cloneGlyph(glyph);
+  state.selectedChar = glyphIndex;
+  rerender();
+}
+
+function commitSelectedGlyphChange(nextGlyph) {
+  const before = cloneGlyph(getSelectedGlyph());
+  const after = cloneGlyph(nextGlyph);
+  setSelectedGlyph(after);
+  pushHistoryEntry(state.selectedChar, before, after);
+  rerender();
+}
+
+function transformGlyph(transformer) {
+  commitSelectedGlyphChange(transformer(cloneGlyph(getSelectedGlyph())));
 }
 
 function buildAsciiMapping() {
@@ -351,8 +400,18 @@ function setPixelFromEvent(event) {
   }
 
   const glyph = getSelectedGlyph();
-  glyph[y][x] = state.activeTool === "erase" ? 0 : 1;
-  rerender();
+  const nextValue = state.activeTool === "erase" ? 0 : 1;
+
+  if (glyph[y][x] === nextValue) {
+    return;
+  }
+
+  glyph[y][x] = nextValue;
+  updateGlyphInfo();
+  renderGlyphEditor();
+  renderPreview();
+  renderGlyphGrid();
+  refreshExportOutputs();
 }
 
 function shiftGlyph(direction) {
@@ -378,23 +437,156 @@ function shiftGlyph(direction) {
     }
   }
 
-  state.glyphs[state.selectedChar] = next;
-  rerender();
+  commitSelectedGlyphChange(next);
 }
 
 function invertGlyph() {
-  const glyph = getSelectedGlyph();
-  for (let y = 0; y < GLYPH_SIZE; y += 1) {
-    for (let x = 0; x < GLYPH_SIZE; x += 1) {
-      glyph[y][x] = glyph[y][x] ? 0 : 1;
-    }
-  }
-  rerender();
+  transformGlyph((glyph) =>
+    glyph.map((row) => row.map((pixel) => (pixel ? 0 : 1)))
+  );
 }
 
 function clearGlyph() {
-  state.glyphs[state.selectedChar] = EMPTY_GLYPH();
-  rerender();
+  commitSelectedGlyphChange(EMPTY_GLYPH());
+}
+
+function mirrorGlyphHorizontal(glyph) {
+  return glyph.map((row) => [...row].reverse());
+}
+
+function mirrorGlyphVertical(glyph) {
+  return [...glyph].reverse().map((row) => [...row]);
+}
+
+function rotateGlyphRight(glyph) {
+  return Array.from({ length: GLYPH_SIZE }, (_, y) =>
+    Array.from({ length: GLYPH_SIZE }, (_, x) => glyph[GLYPH_SIZE - 1 - x][y])
+  );
+}
+
+function rotateGlyphLeft(glyph) {
+  return Array.from({ length: GLYPH_SIZE }, (_, y) =>
+    Array.from({ length: GLYPH_SIZE }, (_, x) => glyph[x][GLYPH_SIZE - 1 - y])
+  );
+}
+
+function undo() {
+  const entry = state.undoStack.pop();
+
+  if (!entry) {
+    return;
+  }
+
+  state.redoStack.push({
+    glyphIndex: entry.glyphIndex,
+    before: cloneGlyph(entry.before),
+    after: cloneGlyph(entry.after),
+  });
+  applyGlyphHistoryState(entry.glyphIndex, entry.before);
+}
+
+function redo() {
+  const entry = state.redoStack.pop();
+
+  if (!entry) {
+    return;
+  }
+
+  state.undoStack.push({
+    glyphIndex: entry.glyphIndex,
+    before: cloneGlyph(entry.before),
+    after: cloneGlyph(entry.after),
+  });
+  applyGlyphHistoryState(entry.glyphIndex, entry.after);
+}
+
+function isEditableTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    target.isContentEditable
+  );
+}
+
+function handleKeyboardShortcut(event) {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+  const hasPrimaryModifier = event.metaKey || event.ctrlKey;
+
+  if (hasPrimaryModifier && key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    undo();
+    return;
+  }
+
+  if (
+    (hasPrimaryModifier && key === "z" && event.shiftKey) ||
+    (hasPrimaryModifier && key === "y")
+  ) {
+    event.preventDefault();
+    redo();
+    return;
+  }
+
+  if (event.altKey || hasPrimaryModifier) {
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    shiftGlyph("up");
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    shiftGlyph("down");
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    shiftGlyph("left");
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    shiftGlyph("right");
+    return;
+  }
+
+  if (key === "h") {
+    event.preventDefault();
+    transformGlyph(mirrorGlyphHorizontal);
+    return;
+  }
+
+  if (key === "v") {
+    event.preventDefault();
+    transformGlyph(mirrorGlyphVertical);
+    return;
+  }
+
+  if (key === "r" && event.shiftKey) {
+    event.preventDefault();
+    transformGlyph(rotateGlyphLeft);
+    return;
+  }
+
+  if (key === "r") {
+    event.preventDefault();
+    transformGlyph(rotateGlyphRight);
+  }
 }
 
 function downloadFile(filename, content, type) {
@@ -409,6 +601,7 @@ function downloadFile(filename, content, type) {
 
 elements.glyphCanvas.addEventListener("pointerdown", (event) => {
   state.isPointerDown = true;
+  state.strokeSnapshot = cloneGlyph(getSelectedGlyph());
   setPixelFromEvent(event);
 });
 
@@ -419,8 +612,15 @@ elements.glyphCanvas.addEventListener("pointermove", (event) => {
 });
 
 window.addEventListener("pointerup", () => {
+  if (state.isPointerDown && state.strokeSnapshot) {
+    pushHistoryEntry(state.selectedChar, state.strokeSnapshot, getSelectedGlyph());
+    state.strokeSnapshot = null;
+    rerender();
+  }
   state.isPointerDown = false;
 });
+
+window.addEventListener("keydown", handleKeyboardShortcut);
 
 elements.charCodeInput.addEventListener("change", () => {
   const value = Number(elements.charCodeInput.value);
@@ -454,16 +654,30 @@ elements.copyGlyphButton.addEventListener("click", () => {
 
 elements.pasteGlyphButton.addEventListener("click", () => {
   if (state.clipboard) {
-    state.glyphs[state.selectedChar] = cloneGlyph(state.clipboard);
-    rerender();
+    commitSelectedGlyphChange(state.clipboard);
   }
 });
 
+elements.undoButton.addEventListener("click", undo);
+elements.redoButton.addEventListener("click", redo);
 elements.invertGlyphButton.addEventListener("click", invertGlyph);
 elements.clearGlyphButton.addEventListener("click", clearGlyph);
+elements.mirrorHorizontalButton.addEventListener("click", () => {
+  transformGlyph(mirrorGlyphHorizontal);
+});
+elements.mirrorVerticalButton.addEventListener("click", () => {
+  transformGlyph(mirrorGlyphVertical);
+});
+elements.rotateRightButton.addEventListener("click", () => {
+  transformGlyph(rotateGlyphRight);
+});
+elements.rotateLeftButton.addEventListener("click", () => {
+  transformGlyph(rotateGlyphLeft);
+});
 
 elements.newFontButton.addEventListener("click", () => {
   state.glyphs = Array.from({ length: GLYPH_COUNT }, EMPTY_GLYPH);
+  resetHistory();
   rerender();
 });
 
@@ -499,6 +713,7 @@ elements.importBinInput.addEventListener("change", async (event) => {
   try {
     const buffer = await file.arrayBuffer();
     deserializeFont(buffer);
+    resetHistory();
     rerender();
   } catch (error) {
     window.alert(error.message);
