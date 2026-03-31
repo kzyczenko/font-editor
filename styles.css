@@ -187,6 +187,11 @@ textarea {
   min-height: 0;
 }
 
+.atlas-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 .editor-layout {
   display: grid;
   grid-template-columns: minmax(320px, 360px) 1fr;
@@ -262,7 +267,8 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
   gap: 10px;
-  max-height: 560px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }
