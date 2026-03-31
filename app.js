@@ -362,12 +362,19 @@ function shiftGlyph(direction) {
   for (let y = 0; y < GLYPH_SIZE; y += 1) {
     for (let x = 0; x < GLYPH_SIZE; x += 1) {
       const sourceX =
-        direction === "left" ? x + 1 : direction === "right" ? x - 1 : x;
-      const sourceY = direction === "up" ? y + 1 : direction === "down" ? y - 1 : y;
+        direction === "left"
+          ? (x + 1) % GLYPH_SIZE
+          : direction === "right"
+            ? (x - 1 + GLYPH_SIZE) % GLYPH_SIZE
+            : x;
+      const sourceY =
+        direction === "up"
+          ? (y + 1) % GLYPH_SIZE
+          : direction === "down"
+            ? (y - 1 + GLYPH_SIZE) % GLYPH_SIZE
+            : y;
 
-      if (sourceX >= 0 && sourceX < GLYPH_SIZE && sourceY >= 0 && sourceY < GLYPH_SIZE) {
-        next[y][x] = glyph[sourceY][sourceX];
-      }
+      next[y][x] = glyph[sourceY][sourceX];
     }
   }
 
