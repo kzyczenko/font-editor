@@ -45,6 +45,22 @@ button:hover,
   box-shadow: 0 6px 16px var(--shadow);
 }
 
+.toggle-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--panel);
+  width: fit-content;
+}
+
+.toggle-input input {
+  width: auto;
+  margin: 0;
+}
+
 textarea,
 input[type="number"],
 input[type="text"],
@@ -103,10 +119,34 @@ textarea {
 
 .hero-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, 100%);
+}
+
+.action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  max-width: 360px;
+}
+
+.hero-action-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.hero-action-grid-import {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hero-action-grid > button,
+.hero-action-grid > .file-input {
+  width: 100%;
 }
 
 .primary-button,
@@ -334,6 +374,15 @@ textarea {
   }
 
   .hero-actions {
-    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .hero-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-action-grid-single,
+  .hero-action-grid-import {
+    grid-template-columns: 1fr;
   }
 }

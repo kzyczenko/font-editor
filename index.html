@@ -18,20 +18,50 @@
           </p>
         </div>
         <div class="hero-actions">
-          <button id="newFontButton" class="secondary-button">Nowy font</button>
-          <button id="downloadBinButton" class="primary-button">
-            Eksport FNT
-          </button>
-          <button id="downloadAsmButton" class="secondary-button">
-            Eksport ASM
-          </button>
-          <button id="downloadCButton" class="secondary-button">
-            Eksport C
-          </button>
-          <label class="file-input">
-            <input id="importBinInput" type="file" accept=".fnt,.bin,.dat" />
-            Import FNT
-          </label>
+          <div class="action-group">
+            <p class="panel-label">Akcje</p>
+            <div class="hero-action-grid hero-action-grid-single">
+              <button id="newFontButton" class="secondary-button">Nowy font</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <p class="panel-label">Eksport</p>
+            <div class="hero-action-grid">
+              <button id="downloadBinButton" class="primary-button">
+                Eksport FNT
+              </button>
+              <button id="downloadAsmButton" class="secondary-button">
+                Eksport ASM
+              </button>
+              <button id="downloadCButton" class="secondary-button">
+                Eksport C
+              </button>
+              <button id="downloadStBinButton" class="secondary-button">
+                Eksport ST BIN
+              </button>
+            </div>
+          </div>
+          <div class="action-group">
+            <p class="panel-label">Import</p>
+            <div class="hero-action-grid hero-action-grid-import">
+              <label class="file-input">
+                <input id="importBinInput" type="file" accept=".fnt,.bin,.dat" />
+                Import FNT
+              </label>
+              <label class="file-input">
+                <input id="importAnticInput" type="file" accept=".fnt,.bin,.dat" />
+                Import ANTIC 128
+              </label>
+              <label class="file-input">
+                <input id="importStBinInput" type="file" accept=".bin,.dat,.fnt" />
+                Import ST BIN
+              </label>
+            </div>
+            <label class="toggle-input">
+              <input id="anticPolishToggle" type="checkbox" checked />
+              Polski remap ANTIC
+            </label>
+          </div>
         </div>
       </header>
 

@@ -1,9 +1,72 @@
 const GLYPH_COUNT = 256;
 const CANVAS_SIZE = 320;
+const DEFAULT_8X8_FONT_URL = "fnt_l2_8x8.bin";
 const FONT_PRESETS = {
   "6x6": { width: 6, height: 6 },
   "8x8": { width: 8, height: 8 },
   "16x16": { width: 16, height: 16 },
+};
+const ANTIC_POLISH_CHAR_BY_ATASCII_CODE = new Map([
+  [1, "ą"],
+  [3, "ć"],
+  [5, "ę"],
+  [12, "ł"],
+  [14, "ń"],
+  [15, "ó"],
+  [19, "ś"],
+  [26, "ż"],
+  [11, "ź"],
+  [17, "Ą"],
+  [22, "Ć"],
+  [18, "Ę"],
+  [123, "Ł"],
+  [13, "Ń"],
+  [16, "Ó"],
+  [4, "Ś"],
+  [24, "Ż"],
+  [9, "Ź"],
+]);
+const POLISH_CHAR_CODE_BY_CODEPAGE = {
+  "iso-8859-2": new Map([
+    ["ą", 0xb1],
+    ["ć", 0xe6],
+    ["ę", 0xea],
+    ["ł", 0xb3],
+    ["ń", 0xf1],
+    ["ó", 0xf3],
+    ["ś", 0xb6],
+    ["ż", 0xbf],
+    ["ź", 0xbc],
+    ["Ą", 0xa1],
+    ["Ć", 0xc6],
+    ["Ę", 0xca],
+    ["Ł", 0xa3],
+    ["Ń", 0xd1],
+    ["Ó", 0xd3],
+    ["Ś", 0xa6],
+    ["Ż", 0xaf],
+    ["Ź", 0xac],
+  ]),
+  "windows-1250": new Map([
+    ["ą", 0xb9],
+    ["ć", 0xe6],
+    ["ę", 0xea],
+    ["ł", 0xb3],
+    ["ń", 0xf1],
+    ["ó", 0xf3],
+    ["ś", 0x9c],
+    ["ż", 0xbf],
+    ["ź", 0x9f],
+    ["Ą", 0xa5],
+    ["Ć", 0xc6],
+    ["Ę", 0xca],
+    ["Ł", 0xa3],
+    ["Ń", 0xd1],
+    ["Ó", 0xd3],
+    ["Ś", 0x8c],
+    ["Ż", 0xaf],
+    ["Ź", 0x8f],
+  ]),
 };
 
 const state = {
@@ -17,6 +80,7 @@ const state = {
   strokeSnapshot: null,
   clipboard: null,
   codePage: "iso-8859-2",
+  anticPolishRemapEnabled: true,
   undoStack: [],
   redoStack: [],
 };
@@ -34,7 +98,11 @@ const elements = {
   downloadBinButton: document.getElementById("downloadBinButton"),
   downloadAsmButton: document.getElementById("downloadAsmButton"),
   downloadCButton: document.getElementById("downloadCButton"),
+  downloadStBinButton: document.getElementById("downloadStBinButton"),
   importBinInput: document.getElementById("importBinInput"),
+  importAnticInput: document.getElementById("importAnticInput"),
+  importStBinInput: document.getElementById("importStBinInput"),
+  anticPolishToggle: document.getElementById("anticPolishToggle"),
   baseFilenameInput: document.getElementById("baseFilenameInput"),
   asmLabelInput: document.getElementById("asmLabelInput"),
   asmOutput: document.getElementById("asmOutput"),
@@ -241,6 +309,32 @@ function serializeFont() {
   return output;
 }
 
+function buildSystemFontRasterBytes() {
+  const formWidth = Math.ceil((GLYPH_COUNT * state.fontWidth) / 8);
+  const raster = new Uint8Array(formWidth * state.fontHeight);
+
+  state.glyphs.forEach((glyph, glyphIndex) => {
+    const bitOffset = glyphIndex * state.fontWidth;
+
+    for (let y = 0; y < state.fontHeight; y += 1) {
+      const rowBase = y * formWidth;
+
+      for (let x = 0; x < state.fontWidth; x += 1) {
+        if (!glyph[y][x]) {
+          continue;
+        }
+
+        const rasterBit = bitOffset + x;
+        const byteIndex = rowBase + Math.floor(rasterBit / 8);
+        const bitIndex = 7 - (rasterBit % 8);
+        raster[byteIndex] |= 1 << bitIndex;
+      }
+    }
+  });
+
+  return raster;
+}
+
 function sanitizeBaseFilename() {
   const raw = elements.baseFilenameInput.value.trim();
   const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -251,6 +345,56 @@ function sanitizeCIdentifier(value, fallback) {
   const cleaned = value.trim().replace(/[^a-zA-Z0-9_]/g, "_");
   const normalized = /^[a-zA-Z_]/.test(cleaned) ? cleaned : `_${cleaned}`;
   return normalized === "_" ? fallback : normalized;
+}
+
+function convertRasterToGlyphs(rasterBytes, firstAde, lastAde, cellWidth, cellHeight, formWidth) {
+  const glyphs = createEmptyFont();
+
+  for (let code = firstAde; code <= lastAde; code += 1) {
+    const glyph = Array.from({ length: cellHeight }, () => Array(cellWidth).fill(0));
+    const glyphIndex = code - firstAde;
+    const bitOffset = glyphIndex * cellWidth;
+
+    for (let y = 0; y < cellHeight; y += 1) {
+      const rowBase = y * formWidth;
+
+      for (let x = 0; x < cellWidth; x += 1) {
+        const rasterBit = bitOffset + x;
+        const byteIndex = rowBase + Math.floor(rasterBit / 8);
+        const bitIndex = 7 - (rasterBit % 8);
+        glyph[y][x] = (rasterBytes[byteIndex] >> bitIndex) & 1;
+      }
+    }
+
+    glyphs[code] = glyph;
+  }
+
+  return glyphs;
+}
+
+function deserializeStRaster(buffer) {
+  const rasterBytes = new Uint8Array(buffer);
+  const formWidth = Math.ceil((GLYPH_COUNT * state.fontWidth) / 8);
+  const expectedSize = formWidth * state.fontHeight;
+
+  if (rasterBytes.length !== expectedSize) {
+    throw new Error(
+      `Plik ST BIN musi miec dokladnie ${expectedSize} bajtow dla ${state.fontWidth}x${state.fontHeight}.`
+    );
+  }
+
+  state.glyphs = convertRasterToGlyphs(
+    rasterBytes,
+    0,
+    GLYPH_COUNT - 1,
+    state.fontWidth,
+    state.fontHeight,
+    formWidth
+  );
+  state.selectedChar = 32;
+  state.clipboard = null;
+  state.strokeSnapshot = null;
+  resetHistory();
 }
 
 function deserializeFont(buffer) {
@@ -270,8 +414,117 @@ function deserializeFont(buffer) {
   }
 }
 
+function decodeGlyphBlock(buffer, glyphCount) {
+  const data = new Uint8Array(buffer);
+  const expectedSize = glyphCount * getBytesPerGlyph();
+
+  if (data.length !== expectedSize) {
+    throw new Error(
+      `Plik musi miec dokladnie ${expectedSize} bajtow dla ${glyphCount} znakow ${state.fontWidth}x${state.fontHeight}.`
+    );
+  }
+
+  return Array.from({ length: glyphCount }, (_, glyphIndex) => {
+    const start = glyphIndex * getBytesPerGlyph();
+    const glyphBytes = [...data.slice(start, start + getBytesPerGlyph())];
+    return bytesToGlyph(glyphBytes);
+  });
+}
+
+function anticScreenToLogicalCode(screenCode) {
+  if (screenCode < 64) {
+    return screenCode + 32;
+  }
+
+  if (screenCode < 96) {
+    return screenCode - 64;
+  }
+
+  return screenCode;
+}
+
+function logicalCodeToAnticScreenCode(logicalCode) {
+  if (logicalCode >= 32 && logicalCode <= 95) {
+    return logicalCode - 32;
+  }
+
+  if (logicalCode >= 0 && logicalCode <= 31) {
+    return logicalCode + 64;
+  }
+
+  if (logicalCode >= 96 && logicalCode <= 127) {
+    return logicalCode;
+  }
+
+  return null;
+}
+
+function logicalCodeToTargetCode(logicalCode) {
+  if (logicalCode < 32 || logicalCode > 126) {
+    return logicalCode;
+  }
+
+  const { charsToBytes } = getCodePageMapping();
+  const character = String.fromCharCode(logicalCode);
+  return charsToBytes.get(character) ?? logicalCode;
+}
+
+function characterToTargetCode(character) {
+  const directMapping = POLISH_CHAR_CODE_BY_CODEPAGE[state.codePage];
+
+  if (directMapping && directMapping.has(character)) {
+    return directMapping.get(character);
+  }
+
+  const { charsToBytes } = getCodePageMapping();
+  return charsToBytes.get(character) ?? null;
+}
+
+function importAnticFont(buffer) {
+  const anticGlyphs = decodeGlyphBlock(buffer, 128);
+  const nextGlyphs = state.glyphs.map((glyph) => cloneGlyph(glyph));
+  const anticPolishCharByScreenCode = new Map();
+
+  if (state.anticPolishRemapEnabled) {
+    ANTIC_POLISH_CHAR_BY_ATASCII_CODE.forEach((character, atasciiCode) => {
+      const screenCode = logicalCodeToAnticScreenCode(atasciiCode);
+
+      if (screenCode !== null) {
+        anticPolishCharByScreenCode.set(screenCode, character);
+      }
+    });
+  }
+
+  anticGlyphs.forEach((glyph, screenCode) => {
+    const polishCharacter = anticPolishCharByScreenCode.get(screenCode);
+
+    if (polishCharacter) {
+      const targetCode = characterToTargetCode(polishCharacter);
+
+      if (targetCode !== null) {
+        nextGlyphs[targetCode] = cloneGlyph(glyph);
+        return;
+      }
+    }
+
+    const logicalCode = anticScreenToLogicalCode(screenCode);
+    const targetCode = logicalCodeToTargetCode(logicalCode);
+    nextGlyphs[targetCode] = cloneGlyph(glyph);
+  });
+
+  state.glyphs = nextGlyphs;
+  state.selectedChar = 32;
+  state.clipboard = null;
+  state.strokeSnapshot = null;
+  resetHistory();
+}
+
 function updateFormatNote() {
-  elements.formatNote.textContent = `Format: ${GLYPH_COUNT} glifow, ${state.fontWidth}x${state.fontHeight}, 1bpp, ${getBytesPerGlyph()} bajtow na znak, ${getBytesPerRow()} bajt(y) na wiersz, bit 7 = lewy piksel.`;
+  const anticMode = state.anticPolishRemapEnabled
+    ? "z polskim remapem"
+    : "bez polskiego remapu";
+  const stSize = Math.ceil((GLYPH_COUNT * state.fontWidth) / 8) * state.fontHeight;
+  elements.formatNote.textContent = `Format: ${GLYPH_COUNT} glifow, ${state.fontWidth}x${state.fontHeight}, 1bpp, ${getBytesPerGlyph()} bajtow na znak, ${getBytesPerRow()} bajt(y) na wiersz, bit 7 = lewy piksel. Import ANTIC 128 oczekuje ${128 * getBytesPerGlyph()} bajtow w screen order Atari 8-bit (${anticMode}). ST BIN oczekuje ${stSize} bajtow w standardowym ukladzie rastrowym Atari ST.`;
 }
 
 function updateGlyphInfo() {
@@ -725,6 +978,10 @@ window.addEventListener("pointerup", () => {
 
 window.addEventListener("keydown", handleKeyboardShortcut);
 
+elements.anticPolishToggle.addEventListener("change", () => {
+  state.anticPolishRemapEnabled = elements.anticPolishToggle.checked;
+});
+
 elements.fontPresetSelect.addEventListener("change", () => {
   maybeSwitchFontPreset(elements.fontPresetSelect.value);
 });
@@ -809,6 +1066,14 @@ elements.downloadCButton.addEventListener("click", () => {
   );
 });
 
+elements.downloadStBinButton.addEventListener("click", () => {
+  downloadFile(
+    `${sanitizeBaseFilename()}_st.bin`,
+    buildSystemFontRasterBytes(),
+    "application/octet-stream"
+  );
+});
+
 elements.importBinInput.addEventListener("change", async (event) => {
   const [file] = event.target.files;
 
@@ -828,7 +1093,66 @@ elements.importBinInput.addEventListener("change", async (event) => {
   }
 });
 
+elements.importAnticInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    importAnticFont(buffer);
+    rerender();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    elements.importAnticInput.value = "";
+  }
+});
+
+elements.importStBinInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    deserializeStRaster(buffer);
+    rerender();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    elements.importStBinInput.value = "";
+  }
+});
+
+async function loadDefaultFontIfAvailable() {
+  if (state.fontPreset !== "8x8") {
+    return;
+  }
+
+  try {
+    const response = await fetch(DEFAULT_8X8_FONT_URL, { cache: "no-store" });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const buffer = await response.arrayBuffer();
+    deserializeFont(buffer);
+    resetHistory();
+    rerender();
+  } catch (_error) {
+    // Keep the empty fallback font if the bundled binary is unavailable.
+  }
+}
+
 elements.glyphCanvas.width = CANVAS_SIZE;
 elements.glyphCanvas.height = CANVAS_SIZE;
 applyFontPreset(state.fontPreset);
+elements.anticPolishToggle.checked = state.anticPolishRemapEnabled;
 rerender();
+loadDefaultFontIfAvailable();
